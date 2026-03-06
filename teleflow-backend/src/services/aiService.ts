@@ -6,6 +6,7 @@ import { parseJsonSafely } from "../utils/json";
 import { logger } from "../utils/logger";
 import { env } from "../config/env";
 import { messageService } from "./messageService";
+import { orderService } from "./orderService";
 
 const llmKey = env.OPENAI_API_KEY ?? env.EMERGENT_LLM_KEY;
 const openai = new OpenAI({
@@ -77,7 +78,26 @@ export const aiService = {
       },
     });
 
-    return structuredResult;
+    // Auto-create order if confidence >= 0.7 and intent is create_order
+    let order = null;
+    if (
+      structuredResult.intent === "create_order" &&
+      structuredResult.confidence >= 0.7
+    ) {
+      try {
+        order = await orderService.createOrderFromAiIntent({
+          tenantId: message.tenantId,
+          contactId: message.contactId,
+          messageId: message.id,
+          aiResult: structuredResult,
+        });
+        logger.info({ orderId: order?.id }, "Order auto-created from AI intent");
+      } catch (err) {
+        logger.error({ err }, "Failed to auto-create order from AI intent");
+      }
+    }
+
+    return { ...structuredResult, order };
   },
 };
 

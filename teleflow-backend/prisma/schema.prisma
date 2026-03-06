@@ -8,11 +8,13 @@ datasource db {
 }
 
 model Tenant {
-  id        String    @id @default(uuid()) @db.Uuid
+  id        String      @id @default(uuid()) @db.Uuid
   name      String
-  createdAt DateTime  @default(now()) @map("created_at")
+  createdAt DateTime    @default(now()) @map("created_at")
   contacts  Contact[]
   messages  Message[]
+  orders    Order[]
+  inventory Inventory[]
 
   @@map("tenants")
 }
@@ -25,6 +27,7 @@ model Contact {
   createdAt DateTime  @default(now()) @map("created_at")
   tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   messages  Message[]
+  orders    Order[]
 
   @@index([tenantId])
   @@map("contacts")
@@ -41,6 +44,7 @@ model Message {
   tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   contact    Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
   aiLogs     AiActionLog[]
+  orders     Order[]
 
   @@index([tenantId])
   @@index([contactId])
@@ -61,4 +65,46 @@ model AiActionLog {
   @@index([createdAt])
   @@index([messageId])
   @@map("ai_actions_log")
+}
+
+model Order {
+  id          String      @id @default(uuid()) @db.Uuid
+  tenantId    String      @map("tenant_id") @db.Uuid
+  contactId   String      @map("contact_id") @db.Uuid
+  messageId   String?     @map("message_id") @db.Uuid
+  status      String      @default("pending")
+  totalAmount Float       @default(0) @map("total_amount")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact     Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  message     Message?    @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  items       OrderItem[]
+
+  @@index([tenantId])
+  @@index([contactId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(uuid()) @db.Uuid
+  orderId   String  @map("order_id") @db.Uuid
+  itemName  String  @map("item_name")
+  quantity  Float
+  unitPrice Float   @default(0) @map("unit_price")
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_items")
+}
+
+model Inventory {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  productName   String   @map("product_name")
+  stockQuantity Float    @default(0) @map("stock_quantity")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, productName])
+  @@index([tenantId])
+  @@map("inventory")
 }

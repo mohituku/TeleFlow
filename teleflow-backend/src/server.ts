@@ -8,6 +8,7 @@ import { notFoundHandler } from "./middleware/notFound";
 import { healthRouter } from "./routes/healthRoutes";
 import { logRouter } from "./routes/logRoutes";
 import { messageRouter } from "./routes/messageRoutes";
+import { orderRouter } from "./routes/orderRoutes";
 import { logger } from "./utils/logger";
 
 const app = express();
@@ -20,7 +21,7 @@ app.use(
   }),
 );
 
-const routers = [healthRouter, messageRouter, logRouter];
+const routers = [healthRouter, messageRouter, logRouter, orderRouter];
 for (const route of routers) {
   app.use(route);
   app.use("/api", route);
