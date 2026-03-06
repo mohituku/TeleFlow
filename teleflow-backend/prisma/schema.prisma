@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String
+  createdAt DateTime  @default(now()) @map("created_at")
+  contacts  Contact[]
+  messages  Message[]
+
+  @@map("tenants")
+}
+
+model Contact {
+  id        String    @id @default(uuid()) @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  phone     String?
+  name      String?
+  createdAt DateTime  @default(now()) @map("created_at")
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  messages  Message[]
+
+  @@index([tenantId])
+  @@map("contacts")
+}
+
+model Message {
+  id         String        @id @default(uuid()) @db.Uuid
+  tenantId   String        @map("tenant_id") @db.Uuid
+  contactId  String        @map("contact_id") @db.Uuid
+  text       String?
+  voiceUrl   String?       @map("voice_url")
+  transcript String?
+  createdAt  DateTime      @default(now()) @map("created_at")
+  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact    Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  aiLogs     AiActionLog[]
+
+  @@index([tenantId])
+  @@index([contactId])
+  @@index([createdAt])
+  @@map("messages")
+}
+
+model AiActionLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  messageId  String?  @map("message_id") @db.Uuid
+  prompt     String
+  response   Json
+  confidence Float
+  action     String
+  createdAt  DateTime @default(now()) @map("created_at")
+  message    Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([messageId])
+  @@map("ai_actions_log")
+}
