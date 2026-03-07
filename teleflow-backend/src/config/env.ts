@@ -8,19 +8,10 @@ const envSchema = z
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     PORT: z.coerce.number().int().positive(),
     DATABASE_URL: z.string().min(1),
-    EMERGENT_LLM_KEY: z.string().min(1).optional(),
     OPENAI_API_KEY: z.string().min(1).optional(),
-    OPENAI_MODEL: z.string().min(1),
+    OPENAI_BASE_URL: z.string().url().optional(),
+    OPENAI_MODEL: z.string().min(1).default("gpt-4o-mini"),
     LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
-  })
-  .superRefine((values, ctx) => {
-    if (!values.OPENAI_API_KEY && !values.EMERGENT_LLM_KEY) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Either OPENAI_API_KEY or EMERGENT_LLM_KEY must be provided.",
-        path: ["OPENAI_API_KEY"],
-      });
-    }
   });
 
 const parsedEnv = envSchema.safeParse(process.env);

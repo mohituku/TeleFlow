@@ -8,11 +8,80 @@ import { env } from "../config/env";
 import { messageService } from "./messageService";
 import { orderService } from "./orderService";
 
-const llmKey = env.OPENAI_API_KEY ?? env.EMERGENT_LLM_KEY;
-const openai = new OpenAI({
-  apiKey: llmKey,
-});
+/* ─── OpenAI client (only created if API key exists) ─── */
+const openai = env.OPENAI_API_KEY
+  ? new OpenAI({
+      apiKey: env.OPENAI_API_KEY,
+      ...(env.OPENAI_BASE_URL ? { baseURL: env.OPENAI_BASE_URL } : {}),
+    })
+  : null;
 
+/* ─── Local deterministic parser (fallback when no LLM key) ─── */
+const ITEM_PATTERNS: Array<{ regex: RegExp; name: string }> = [
+  { regex: /(\d+(?:\.\d+)?)\s*kg\s+(\w+)/gi, name: "" },
+  { regex: /(\d+(?:\.\d+)?)\s*liter?\s+(\w+)/gi, name: "" },
+  { regex: /(\d+)\s*packet\s+(\w+)/gi, name: "" },
+  { regex: /(\d+)\s*(?:pcs?|pieces?|bottles?|bags?|boxes?|packs?)\s+(\w+)/gi, name: "" },
+];
+
+function localParse(text: string): {
+  intent: string;
+  customer: string;
+  items: Array<{ name: string; quantity: number }>;
+  confidence: number;
+} {
+  const items: Array<{ name: string; quantity: number }> = [];
+  const lowerText = text.toLowerCase();
+
+  // Pattern: "Nkg item" or "N liter item" or "N packet item"
+  const qtyItemRegex = /(\d+(?:\.\d+)?)\s*(kg|kgs|liter|litre|litres|liters|packet|packets|pcs|piece|pieces|bottle|bottles|bag|bags|box|boxes|pack|packs)?\s+(\w+)/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = qtyItemRegex.exec(text)) !== null) {
+    const qty = parseFloat(match[1]);
+    const item = match[3];
+    if (qty > 0 && item && item.length > 1) {
+      items.push({ name: item, quantity: qty });
+    }
+  }
+
+  // Also try: "N item" (just number + word)
+  if (items.length === 0) {
+    const simpleRegex = /(\d+)\s+(\w{2,})/gi;
+    while ((match = simpleRegex.exec(text)) !== null) {
+      const qty = parseInt(match[1], 10);
+      const item = match[2];
+      // skip common non-item words
+      const skip = ["ne", "ko", "se", "me", "hai", "ho", "ka", "ki", "ke", "aur", "bhi", "kal", "aaj"];
+      if (qty > 0 && item && !skip.includes(item.toLowerCase())) {
+        items.push({ name: item, quantity: qty });
+      }
+    }
+  }
+
+  // Extract customer name (heuristic: look for proper noun patterns)
+  let customer = "Unknown";
+  const namePatterns = [
+    /(\b[A-Z][a-z]{2,})\s+(?:ne|ko|ka|ki|ke|bought|ordered|wants)/i,
+    /(?:for|to)\s+(\b[A-Z][a-z]{2,})/i,
+    /(\b[A-Z][a-z]{2,})\s+(?:bhejna|bhejo|dena|de do)/i,
+  ];
+  for (const pat of namePatterns) {
+    const nameMatch = text.match(pat);
+    if (nameMatch) {
+      customer = nameMatch[1];
+      break;
+    }
+  }
+
+  const hasItems = items.length > 0;
+  const intent = hasItems ? "create_order" : "unknown";
+  const confidence = hasItems ? 0.82 : 0.3;
+
+  return { intent, customer, items, confidence };
+}
+
+/* ─── Main AI service ─── */
 export const aiService = {
   async processMessage(messageId: string) {
     const message = await messageService.getMessageById(messageId);
@@ -27,48 +96,59 @@ export const aiService = {
       8,
     );
 
-    const prompt = buildPrompt(conversationHistory, message.id);
+    const textContent = message.text || message.transcript || "";
+    let structuredResult;
+    let rawResponse: string;
 
-    logger.info({ messageId, prompt }, "AI prompt generated");
+    if (openai) {
+      /* ── LLM path ── */
+      const prompt = buildPrompt(conversationHistory, message.id);
+      logger.info({ messageId, prompt }, "AI prompt generated");
 
-    const completion = await openai.chat.completions.create({
-      model: env.OPENAI_MODEL,
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are TeleFlow AI parser. Convert business chat into strict JSON with fields: intent, customer, items, confidence. Confidence must be 0 to 1.",
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-    });
+      const completion = await openai.chat.completions.create({
+        model: env.OPENAI_MODEL,
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are TeleFlow AI parser. Convert business chat into strict JSON with fields: intent, customer, items, confidence. Confidence must be 0 to 1.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+      });
 
-    const rawResponse = completion.choices[0]?.message?.content;
+      rawResponse = completion.choices[0]?.message?.content ?? "";
 
-    if (!rawResponse) {
-      throw new AppError("OpenAI returned empty response.", 502);
+      if (!rawResponse) {
+        throw new AppError("OpenAI returned empty response.", 502);
+      }
+
+      logger.info({ messageId, rawResponse }, "AI model response received");
+
+      const parsedJson = parseJsonSafely(rawResponse);
+      const validated = aiIntentSchema.safeParse(parsedJson);
+
+      if (!validated.success) {
+        throw new AppError(`AI response schema validation failed: ${validated.error.message}`, 422);
+      }
+
+      structuredResult = validated.data;
+    } else {
+      /* ── Local fallback parser ── */
+      logger.info({ messageId }, "Using local AI parser (no LLM key configured)");
+      structuredResult = localParse(textContent);
+      rawResponse = JSON.stringify(structuredResult);
     }
-
-    logger.info({ messageId, rawResponse }, "AI model response received");
-
-    const parsedJson = parseJsonSafely(rawResponse);
-    const validated = aiIntentSchema.safeParse(parsedJson);
-
-    if (!validated.success) {
-      throw new AppError(`AI response schema validation failed: ${validated.error.message}`, 422);
-    }
-
-    const structuredResult = validated.data;
 
     await prisma.aiActionLog.create({
       data: {
         messageId: message.id,
-        prompt,
+        prompt: openai ? buildPrompt(conversationHistory, message.id) : `[local-parse] ${textContent}`,
         response: JSON.stringify({
           raw: rawResponse,
           parsed: structuredResult,
