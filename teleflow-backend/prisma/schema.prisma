@@ -3,12 +3,12 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
 model Tenant {
-  id        String      @id @default(uuid()) @db.Uuid
+  id        String      @id @default(uuid())
   name      String
   createdAt DateTime    @default(now()) @map("created_at")
   contacts  Contact[]
@@ -20,8 +20,8 @@ model Tenant {
 }
 
 model Contact {
-  id        String    @id @default(uuid()) @db.Uuid
-  tenantId  String    @map("tenant_id") @db.Uuid
+  id        String    @id @default(uuid())
+  tenantId  String    @map("tenant_id")
   phone     String?
   name      String?
   createdAt DateTime  @default(now()) @map("created_at")
@@ -34,9 +34,9 @@ model Contact {
 }
 
 model Message {
-  id         String        @id @default(uuid()) @db.Uuid
-  tenantId   String        @map("tenant_id") @db.Uuid
-  contactId  String        @map("contact_id") @db.Uuid
+  id         String        @id @default(uuid())
+  tenantId   String        @map("tenant_id")
+  contactId  String        @map("contact_id")
   text       String?
   voiceUrl   String?       @map("voice_url")
   transcript String?
@@ -53,10 +53,10 @@ model Message {
 }
 
 model AiActionLog {
-  id         String   @id @default(uuid()) @db.Uuid
-  messageId  String?  @map("message_id") @db.Uuid
+  id         String   @id @default(uuid())
+  messageId  String?  @map("message_id")
   prompt     String
-  response   Json
+  response   String
   confidence Float
   action     String
   createdAt  DateTime @default(now()) @map("created_at")
@@ -68,10 +68,10 @@ model AiActionLog {
 }
 
 model Order {
-  id          String      @id @default(uuid()) @db.Uuid
-  tenantId    String      @map("tenant_id") @db.Uuid
-  contactId   String      @map("contact_id") @db.Uuid
-  messageId   String?     @map("message_id") @db.Uuid
+  id          String      @id @default(uuid())
+  tenantId    String      @map("tenant_id")
+  contactId   String      @map("contact_id")
+  messageId   String?     @map("message_id")
   status      String      @default("pending")
   totalAmount Float       @default(0) @map("total_amount")
   createdAt   DateTime    @default(now()) @map("created_at")
@@ -86,8 +86,8 @@ model Order {
 }
 
 model OrderItem {
-  id        String  @id @default(uuid()) @db.Uuid
-  orderId   String  @map("order_id") @db.Uuid
+  id        String  @id @default(uuid())
+  orderId   String  @map("order_id")
   itemName  String  @map("item_name")
   quantity  Float
   unitPrice Float   @default(0) @map("unit_price")
@@ -97,8 +97,8 @@ model OrderItem {
 }
 
 model Inventory {
-  id            String   @id @default(uuid()) @db.Uuid
-  tenantId      String   @map("tenant_id") @db.Uuid
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
   productName   String   @map("product_name")
   stockQuantity Float    @default(0) @map("stock_quantity")
   updatedAt     DateTime @updatedAt @map("updated_at")

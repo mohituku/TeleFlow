@@ -69,10 +69,10 @@ export const aiService = {
       data: {
         messageId: message.id,
         prompt,
-        response: {
+        response: JSON.stringify({
           raw: rawResponse,
           parsed: structuredResult,
-        },
+        }),
         confidence: structuredResult.confidence,
         action: structuredResult.intent,
       },
